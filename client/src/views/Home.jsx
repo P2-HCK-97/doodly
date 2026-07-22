@@ -3,12 +3,15 @@ import { useNavigate } from "react-router";
 import { showToast } from "../utils/toastify";
 import PlayerAvatar from "../components/PlayerAvatar";
 import socket from "../services/socket";
+import { useGame } from "../contexts/GameContext";
 
 export default function Home() {
   const [username, setUsername] = useState("");
   const [roomCode, setRoomCode] = useState("");
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
 
   const navigate = useNavigate();
+  const { dispatch } = useGame();
   const modalRef = useRef(null);
 
   const avatarSeed = username.trim() || "Doodly";
@@ -21,6 +24,8 @@ export default function Home() {
       return;
     }
 
+    setIsCreatingRoom(true);
+
     socket.emit(
       "room:create",
       {
@@ -29,15 +34,18 @@ export default function Home() {
       (response) => {
         console.log("Create room response:", response);
         if (response?.error) {
+          setIsCreatingRoom(false);
           showToast.error(response.error);
           return;
         }
 
         if (!response?.room?.code) {
+          setIsCreatingRoom(false);
           showToast.error("Gagal membuat room");
           return;
         }
 
+        dispatch({ type: "ROOM_JOINED", payload: response.room });
         navigate(`/lobby/${response.room.code}`);
       },
     );
@@ -71,6 +79,7 @@ export default function Home() {
 
         modalRef.current?.close();
 
+        dispatch({ type: "ROOM_JOINED", payload: response.room });
         navigate(`/lobby/${response.room.code}`);
       },
     );
@@ -212,6 +221,30 @@ export default function Home() {
           </div>
         </div>
       </dialog>
+
+      {/* Loading Overlay Neo-Brutalism */}
+      {isCreatingRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white border-[3px] border-black w-full max-w-sm p-8 shadow-[8px_8px_0px_0px_#000000] relative text-black text-center">
+            <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#FFE600] border-[3px] border-black px-4 py-1 font-black text-xs uppercase tracking-wider shadow-[3px_3px_0px_0px_#000000] -rotate-2 animate-bounce">
+              MEMPROSES AI...
+            </div>
+
+            <div className="py-6 flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-[4px] border-black border-t-[#EB4B98] rounded-full animate-spin"></div>
+
+              <div className="space-y-1">
+                <h3 className="font-black text-xl uppercase tracking-tight">
+                  MEMBUAT ROOM...
+                </h3>
+                <p className="text-xs font-semibold text-gray-700 leading-relaxed">
+                  Menyiapkan topik gambar kolaboratif seru untuk tim kamu! 🎨
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

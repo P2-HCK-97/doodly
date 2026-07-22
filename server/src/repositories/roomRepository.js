@@ -46,6 +46,7 @@ function createRoom({ hostSocketId, hostUsername, color, avatarUrl }) {
         username: hostUsername,
         color,
         avatarUrl,
+        isHost: true,
       },
     ],
     topicPool: [],
@@ -86,14 +87,19 @@ function addPlayer(code, player) {
   const room = rooms.get(code);
   if (!room) return null;
 
+  const playerObj = {
+    ...player,
+    isHost: player.socketId === room.hostSocketId,
+  };
+
   const existingIndex = room.players.findIndex(
     (existing) => existing.socketId === player.socketId,
   );
 
   if (existingIndex === -1) {
-    room.players.push(player);
+    room.players.push(playerObj);
   } else {
-    room.players[existingIndex] = player;
+    room.players[existingIndex] = playerObj;
   }
 
   return room;

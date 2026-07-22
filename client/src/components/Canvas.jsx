@@ -1,9 +1,60 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
 
-export default function Canvas({ onStroke, brushColor = '#000000', brushSize = 4, tool = 'pen' }) {
+const Canvas = forwardRef(function Canvas({ onStroke, brushColor = '#000000', brushSize = 4, tool = 'pen' }, ref) {
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
+
+  // Nyimpen titik terakhir tiap pemain lain, biar bisa gambar garis
+  // dari titik lama ke titik baru pas 'move' masuk (bukan cuma titik doang)
+  const remoteLastPoints = useRef({});
+
+  useImperativeHandle(ref, () => ({
+    getSnapshot: () => {
+      if (!canvasRef.current) return null;
+      return canvasRef.current.toDataURL('image/png');
+    },
+
+    drawStroke: (strokeData) => {
+      const context = contextRef.current;
+      if (!context || !strokeData) return;
+
+      const { socketId, x, y, type, color, size, tool: strokeTool } = strokeData;
+
+      // save/restore biar warna & ukuran milik pemain lain
+      // gak "nempel" ke pengaturan brush milik kita sendiri
+      context.save();
+      context.strokeStyle = color || '#000000';
+      context.lineWidth = size || 4;
+      context.lineCap = 'round';
+      context.globalCompositeOperation = strokeTool === 'eraser' ? 'destination-out' : 'source-over';
+
+      if (type === 'down') {
+        remoteLastPoints.current[socketId] = { x, y };
+      } else if (type === 'move') {
+        const last = remoteLastPoints.current[socketId];
+        if (last) {
+          context.beginPath();
+          context.moveTo(last.x, last.y);
+          context.lineTo(x, y);
+          context.stroke();
+        }
+        remoteLastPoints.current[socketId] = { x, y };
+      } else if (type === 'up') {
+        delete remoteLastPoints.current[socketId];
+      }
+
+      context.restore();
+    },
+
+    clear: () => {
+      const canvas = canvasRef.current;
+      const context = contextRef.current;
+      if (!canvas || !context) return;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      remoteLastPoints.current = {};
+    },
+  }));
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -15,7 +66,6 @@ export default function Canvas({ onStroke, brushColor = '#000000', brushSize = 4
     contextRef.current = context;
   }, []);
 
-  // Update setting brush tiap kali warna/size/tool berubah dari ToolBar
   useEffect(() => {
     if (!contextRef.current) return;
     contextRef.current.strokeStyle = brushColor;
@@ -52,15 +102,15 @@ export default function Canvas({ onStroke, brushColor = '#000000', brushSize = 4
   };
 
   return (
-    <>
-      <canvas
-        ref={canvasRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        className="w-full h-full bg-white border-[3px] border-black cursor-crosshair"
-      />
-    </>
+    <canvas
+      ref={canvasRef}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      className="w-full h-full block bg-white border-[3px] border-black shadow-[4px_4px_0px_0px_#000000] cursor-crosshair"
+    />
   );
-}
+});
+
+export default Canvas;

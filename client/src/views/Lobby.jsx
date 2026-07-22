@@ -1,26 +1,46 @@
+import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useGame } from '../contexts/GameContext';
 import PlayerList from '../components/PlayerList';
 import { MIN_PLAYERS_TO_START } from '../constants/gameConfig';
+import socket from '../services/socket';
 
 export default function Lobby() {
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
   const navigate = useNavigate();
   const { roomCode } = useParams();
 
+  useEffect(() => {
+    socket.on('room:playersUpdate', (data) => {
+      dispatch({ type: 'SET_PLAYERS', payload: data.players });
+    });
+
+    socket.on('round:started', ({ topic }) => {
+      dispatch({ type: 'ROUND_STARTED', payload: { topic } });
+      navigate(`/game/${roomCode}`);
+    });
+
+    return () => {
+      socket.off('room:playersUpdate');
+      socket.off('round:started');
+    };
+  }, [dispatch, navigate, roomCode]);
+
   const canStart = state.players.length >= MIN_PLAYERS_TO_START;
-  const currentUser = state.players[0]; // dummy: asumsi player pertama = diri sendiri
-  const isHost = currentUser?.isHost;
+  const currentUser = state.players.find((p) => p.socketId === socket.id) || state.players[0];
+  const isHost = Boolean(currentUser?.isHost || (state.hostSocketId && currentUser?.socketId === state.hostSocketId) || state.players[0]?.socketId === socket.id);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(roomCode);
-    // showToast.success('Kode disalin!') -- pasang kalau toastify udah siap
   };
 
-  const handleStart = () => {
+  const  handleStart = () => {
     console.log('Emit socket game:start', roomCode);
-    // socket.emit('game:start', { roomCode })
-    navigate(`/game/${roomCode}`); // ganti dari /canvas/${state.roomCode}
+    socket.emit('game:start', { roomCode }, (response) => {
+      if (response?.error) {
+        console.error('Gagal memulai game:', response.error);
+      }
+    });
   };
 
   return (
@@ -55,7 +75,7 @@ export default function Lobby() {
             <label className="block text-xs font-bold mb-2 uppercase">Kode Room</label>
             <div className="flex gap-2">
               <div className="flex-1 border-[3px] border-black px-4 py-3 text-center text-xl tracking-widest font-black">
-                {state.roomCode}
+                {roomCode}
               </div>
               <button
                 onClick={handleCopyCode}
@@ -91,5 +111,5 @@ export default function Lobby() {
         </div>
       </div>
     </>
-  )
+  );
 }

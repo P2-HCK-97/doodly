@@ -1,12 +1,12 @@
 import { createContext, useContext, useReducer } from 'react';
-import { DUMMY_PLAYERS, DUMMY_TOPIC } from '../constants/gameConfig';
-
+  
 const GameContext = createContext(null);
 
 const initialState = {
-  roomCode: 'X7A9B', // dummy, nanti diisi dari response socket
-  players: DUMMY_PLAYERS,
-  currentTopic: DUMMY_TOPIC,
+  roomCode: '',
+  hostSocketId: '',
+  players: [],
+  currentTopic: '',
   phase: 'lobby', // 'lobby' | 'playing' | 'result'
   roundHistory: [],
   totalScore: 0,
@@ -14,6 +14,16 @@ const initialState = {
 
 function gameReducer(state, action) {
   switch (action.type) {
+    case 'ROOM_JOINED':
+      return {
+        ...state,
+        roomCode: action.payload.code || state.roomCode,
+        hostSocketId: action.payload.hostSocketId || state.hostSocketId,
+        players: action.payload.players || [],
+        currentTopic: action.payload.currentTopic || state.currentTopic,
+        phase: action.payload.phase || 'lobby',
+        totalScore: action.payload.totalScore || 0,
+      };
     case 'SET_PLAYERS':
       return { ...state, players: action.payload };
     case 'ROUND_STARTED':
@@ -23,7 +33,7 @@ function gameReducer(state, action) {
     case 'AI_SUMMARY_RECEIVED':
       return {
         ...state,
-        totalScore: action.payload.roomTotalScore,
+        totalScore: action.payload.roomTotalScore ?? state.totalScore,
         roundHistory: [...state.roundHistory, action.payload],
       };
     default:
