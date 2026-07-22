@@ -1,27 +1,73 @@
 'use strict';
 
-// Static fallback pool — used whenever the AI call fails for any reason,
-// so a room can always start even without a working AI response.
+const DEFAULT_TOPIC_COUNT = 12;
+const MAX_TOPIC_COUNT = 15;
+
 const FALLBACK_TOPICS = [
-  'Kucing naik skateboard',
-  'Rumah di atas awan',
-  'Matahari pakai kacamata hitam',
-  'Robot lagi ngambek',
-  'Pizza terbang',
-  'Kura-kura balapan mobil',
-  'Hantu ngopi di kafe',
-  'Gajah main basket',
-  'Ikan pakai payung',
-  'Alien lagi antri sembako',
-  'Naga makan mie ayam',
-  'Sepatu roket',
-  'Ular main gitar',
-  'Bebek jadi detektif',
+  'Kucing menjual es krim',
+  'Rumah kecil terbang bersama balon',
+  'Matahari memakai kacamata hitam',
+  'Robot menari di taman',
+  'Pizza terbang membawa balon',
+  'Kura-kura mengendarai mobil balap',
+  'Panda minum teh hangat',
+  'Gajah bermain bola basket',
+  'Ikan membawa payung warna-warni',
+  'Alien berkebun di bulan',
+  'Naga memasak mie instan',
+  'Sepatu roket mengejar pelangi',
+  'Ular memainkan gitar listrik',
+  'Bebek menjadi detektif taman',
+  'Kelinci membuat kue ulang tahun',
 ];
+
+const BLOCKED_WORDS = new Set([
+  'marah',
+  'ngambek',
+  'menangis',
+  'sedih',
+  'takut',
+  'sakit',
+  'terluka',
+  'mati',
+  'kematian',
+  'membunuh',
+  'pembunuhan',
+  'darah',
+  'perang',
+  'senjata',
+  'bom',
+  'bencana',
+  'kecelakaan',
+  'pencuri',
+  'merampok',
+  'kriminal',
+  'narkoba',
+  'alkohol',
+  'judi',
+  'seksual',
+  'politik',
+  'agama',
+  'menghina',
+  'penghinaan',
+  'mengejek',
+  'ejekan',
+  'sarkasme',
+  'gagal',
+  'menderita',
+  'hantu',
+  'seram',
+]);
 
 const TOPIC_POOL_SCHEMA = {
   type: 'array',
-  items: { type: 'string' },
+  description:
+    'Daftar topik positif untuk game menggambar kolaboratif.',
+  items: {
+    type: 'string',
+    description:
+      'Topik konkret berisi 3 sampai 7 kata, memiliki subjek dan aksi yang jelas.',
+  },
 };
 
 let aiClientPromise;
@@ -32,67 +78,212 @@ async function getAiClient() {
   }
 
   if (!aiClientPromise) {
-    aiClientPromise = import('@google/genai').then(({ GoogleGenAI }) => {
-      return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    });
+    aiClientPromise = import('@google/genai')
+      .then(({ GoogleGenAI }) => {
+        return new GoogleGenAI({
+          apiKey: process.env.GEMINI_API_KEY,
+        });
+      })
+      .catch((error) => {
+        aiClientPromise = undefined;
+        throw error;
+      });
   }
 
   return aiClientPromise;
 }
 
+function normalizeCount(count) {
+  const parsedCount = Number(count);
+
+  if (!Number.isInteger(parsedCount) || parsedCount < 1) {
+    return DEFAULT_TOPIC_COUNT;
+  }
+
+  return Math.min(parsedCount, MAX_TOPIC_COUNT);
+}
+
+function normalizeTopic(topic) {
+  return topic
+    .replace(/\s+/g, ' ')
+    .replace(/[.!?]+$/g, '')
+    .trim();
+}
+
+function getTopicWords(topic) {
+  return normalizeTopic(topic)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function isValidTopic(topic) {
+  if (typeof topic !== 'string') {
+    return false;
+  }
+
+  const normalizedTopic = normalizeTopic(topic);
+
+  if (!normalizedTopic) {
+    return false;
+  }
+
+  const words = getTopicWords(normalizedTopic);
+  const containsBlockedWord = words.some((word) =>
+    BLOCKED_WORDS.has(word),
+  );
+
+  return (
+    words.length >= 3 &&
+    words.length <= 7 &&
+    normalizedTopic.length <= 70 &&
+    !containsBlockedWord
+  );
+}
+
+function getUniqueValidTopics(topics) {
+  const uniqueTopics = new Map();
+
+  for (const topic of topics) {
+    if (!isValidTopic(topic)) {
+      continue;
+    }
+
+    const normalizedTopic = normalizeTopic(topic);
+    const topicKey = normalizedTopic.toLowerCase();
+
+    if (!uniqueTopics.has(topicKey)) {
+      uniqueTopics.set(topicKey, normalizedTopic);
+    }
+  }
+
+  return [...uniqueTopics.values()];
+}
+
+function fillWithFallback(topics, count) {
+  const topicMap = new Map(
+    topics.map((topic) => [topic.toLowerCase(), topic]),
+  );
+
+  for (const fallbackTopic of FALLBACK_TOPICS) {
+    if (topicMap.size >= count) {
+      break;
+    }
+
+    const topicKey = fallbackTopic.toLowerCase();
+
+    if (!topicMap.has(topicKey)) {
+      topicMap.set(topicKey, fallbackTopic);
+    }
+  }
+
+  return [...topicMap.values()].slice(0, count);
+}
+
 /**
- * Generates a pool of drawable topics for a room, called once when the
- * room is created. Always resolves — never throws — falling back to
- * FALLBACK_TOPICS on any failure (missing API key, network error,
- * invalid or non-JSON response) so a room can always start.
+ * Membuat kumpulan topik sekali ketika room dibuat.
+ * Function selalu mengembalikan array topik.
+ * Jika Gemini gagal, topik fallback akan digunakan.
  *
- * @param {number} [count=12] - how many topics to request from the AI.
- * @returns {Promise<string[]>} pool of topic strings.
+ * @param {number} [count=12]
+ * @returns {Promise<string[]>}
  */
-async function generateTopicPool(count = 12) {
+async function generateTopicPool(count = DEFAULT_TOPIC_COUNT) {
+  const safeCount = normalizeCount(count);
+
   try {
     const ai = await getAiClient();
 
-    const response = await ai.models.generateContent({
-      model: process.env.GEMINI_TOPIC_MODEL || 'gemini-3.6-flash',
-      contents: [
-        {
-          text: `
-Buatkan ${count} topik gambar sederhana dalam Bahasa Indonesia santai,
-yang bisa digambar dalam waktu terbatas (90 detik) oleh sekelompok orang
-bareng-bareng di satu canvas yang sama. Campur level kesulitan: sebagian
-gampang, sebagian medium, sebagian susah.
+    const prompt = `
+Buat tepat ${safeCount} topik untuk game menggambar kolaboratif
+dalam Bahasa Indonesia.
 
-Format output HARUS berupa JSON array of string murni, tanpa markdown,
-tanpa backticks, dan tanpa penjelasan lain di luar array itu.
-          `.trim(),
-        },
-      ],
+Konteks game:
+Semua pemain menggambar bersama pada satu canvas berdasarkan satu topik.
+Setiap ronde berlangsung selama 90 detik.
+
+Aturan topik:
+- Setiap topik terdiri dari 3 sampai 7 kata.
+- Topik harus konkret dan mudah divisualisasikan.
+- Topik harus memiliki subjek dan aksi atau situasi yang jelas.
+- Topik harus masuk akal untuk digambar dalam waktu 90 detik.
+- Topik harus lucu, positif, ringan, dan ramah untuk semua umur.
+- Topik tidak boleh terlalu rumit atau memiliki terlalu banyak objek.
+- Semua topik harus unik dan tidak mengulang ide yang sama.
+
+Tema yang diperbolehkan:
+- Hewan.
+- Makanan.
+- Benda sehari-hari.
+- Kendaraan.
+- Profesi.
+- Kegiatan sehari-hari.
+- Fantasi ringan.
+
+Dilarang:
+- Topik umum atau abstrak.
+- Topik di luar konteks game menggambar.
+- Sarkasme, sindiran, ejekan, penghinaan, dan kata kasar.
+- Kekerasan, kematian, ketakutan, kesedihan, atau penderitaan.
+- Kriminalitas, bencana, kecelakaan, dan peperangan.
+- Politik, agama, seksual, narkoba, alkohol, dan perjudian.
+- Merek, logo, tokoh terkenal, atau karakter berhak cipta.
+- Situasi menyeramkan, berbahaya, atau berkonotasi negatif.
+
+Contoh topik yang sesuai:
+- "Kucing menjual es krim"
+- "Robot menari di taman"
+- "Gajah bermain bola basket"
+- "Alien berkebun di bulan"
+- "Kelinci membuat kue ulang tahun"
+
+Campurkan tingkat kesulitan secara seimbang:
+- Sekitar 40 persen mudah.
+- Sekitar 40 persen sedang.
+- Sekitar 20 persen sulit.
+
+Kembalikan hanya JSON array yang berisi string.
+Jangan tambahkan markdown, nomor, kategori, atau penjelasan.
+    `.trim();
+
+    const response = await ai.models.generateContent({
+      model:
+        process.env.GEMINI_TOPIC_MODEL || 'gemini-3.6-flash',
+      contents: prompt,
       config: {
-        responseMimeType: 'application/json',
-        responseJsonSchema: TOPIC_POOL_SCHEMA,
+        responseFormat: {
+          text: {
+            mimeType: 'application/json',
+            schema: TOPIC_POOL_SCHEMA,
+          },
+        },
       },
     });
 
     if (!response.text) {
-      throw new Error('Gemini tidak mengembalikan hasil topic pool');
+      throw new Error(
+        'Gemini tidak mengembalikan hasil topic pool',
+      );
     }
 
-    const topics = JSON.parse(response.text);
+    const rawTopics = JSON.parse(response.text);
 
-    const isValid =
-      Array.isArray(topics) &&
-      topics.length > 0 &&
-      topics.every((topic) => typeof topic === 'string' && topic.trim().length > 0);
-
-    if (!isValid) {
-      throw new Error('Format topic pool dari Gemini tidak valid');
+    if (!Array.isArray(rawTopics)) {
+      throw new Error(
+        'Format topic pool dari Gemini bukan array',
+      );
     }
 
-    return topics;
+    const validTopics = getUniqueValidTopics(rawTopics);
+
+    return fillWithFallback(validTopics, safeCount);
   } catch (error) {
-    console.error(`generateTopicPool gagal, pakai fallback: ${error.message}`);
-    return FALLBACK_TOPICS;
+    console.error(
+      `generateTopicPool gagal, pakai fallback: ${error.message}`,
+    );
+
+    return FALLBACK_TOPICS.slice(0, safeCount);
   }
 }
 
@@ -100,11 +291,3 @@ module.exports = {
   generateTopicPool,
   FALLBACK_TOPICS,
 };
-
-// Contoh test manual (jalanin dari folder server/):
-//   node -e "require('./src/services/aiTopicGenService').generateTopicPool().then(console.log)"
-//     -> kalau GEMINI_API_KEY valid & Gemini kebentur, hasilnya array topic dari AI
-//     -> kalau GEMINI_API_KEY kosong/gagal, otomatis fallback dan hasilnya sama persis FALLBACK_TOPICS
-//
-//   node -e "console.log(require('./src/services/aiTopicGenService').FALLBACK_TOPICS.length)"
-//     -> 14 (jumlah topic di pool statis)
