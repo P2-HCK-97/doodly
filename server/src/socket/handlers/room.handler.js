@@ -3,6 +3,7 @@
 const roomRepository = require('../../repositories/roomRepository');
 const { generateAvatarUrl } = require('../../utils/avatarGen');
 const { assignColor } = require('../../utils/colorAssign');
+const { generateTopicPool } = require('../../services/aiTopicGenService');
 
 /**
  * Registers room-related socket event handlers on a single connection:
@@ -14,7 +15,7 @@ const { assignColor } = require('../../utils/colorAssign');
  * @param {import('socket.io').Socket} socket
  */
 function registerRoomHandlers(io, socket) {
-  socket.on('room:create', ({ username }, callback) => {
+  socket.on('room:create', async ({ username }, callback) => {
     try {
       const avatarUrl = generateAvatarUrl(username);
       const color = assignColor([]);
@@ -29,7 +30,11 @@ function registerRoomHandlers(io, socket) {
       socket.join(room.code);
       socket.data.roomCode = room.code;
 
-      callback({ room });
+      const topicPool = await generateTopicPool();
+      roomRepository.setTopicPool(room.code, topicPool);
+
+      const updatedRoom = roomRepository.getRoom(room.code);
+      callback({ room: updatedRoom });
     } catch (error) {
       callback({ error: error.message });
     }

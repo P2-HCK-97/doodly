@@ -1,5 +1,6 @@
 const { Server } = require("socket.io");
 const { registerRoomHandlers } = require("./handlers/room.handler");
+const { registerRoundHandlers } = require("./handlers/round.handler");
 
 function initSocket(httpServer) {
   const io = new Server(httpServer, {
@@ -12,6 +13,7 @@ function initSocket(httpServer) {
     console.log("client connected:", socket.id);
 
     registerRoomHandlers(io, socket);
+    registerRoundHandlers(io, socket);
   });
 
   return io;

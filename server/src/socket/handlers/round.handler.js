@@ -3,6 +3,7 @@
 const roomRepository = require('../../repositories/roomRepository');
 // eslint-disable-next-line no-unused-vars -- reserved for future remaining-time/reconnect handling
 const { checkRoundOver, getRemainingSeconds } = require('../../services/gameEngine');
+const { generateRoundSummary } = require('../../services/aiRoundSummaryService');
 
 const ROUND_DURATION_SEC = 90;
 
@@ -122,7 +123,7 @@ function registerRoundHandlers(io, socket) {
     }
   });
 
-  socket.on('canvas:snapshotSubmit', ({ roomCode, imageBase64 }, callback) => {
+  socket.on('canvas:snapshotSubmit', async ({ roomCode, imageBase64 }, callback) => {
     try {
       const room = roomRepository.getRoom(roomCode);
       if (!room) {
@@ -137,12 +138,37 @@ function registerRoundHandlers(io, socket) {
 
       roomRepository.setCanvasSnapshot(roomCode, imageBase64);
 
-      // TODO: trigger aiRoundSummaryService di sini nanti, setelah snapshot
-      // beneran ada, async jangan blocking.
-
       callback({ success: true });
     } catch (error) {
       callback({ error: error.message });
+      return;
+    }
+
+    // Dipisah dari callback di atas dengan sengaja: host udah dapet ack
+    // begitu snapshot kesimpen, gak perlu nunggu panggilan AI yang lebih
+    // lambat. Kalau AI-nya gagal, itu gak boleh bikin request submit-nya
+    // ikut dianggap gagal — cukup di-log, room tetap bisa lanjut ronde
+    // berikutnya walau ronde ini gak dapet skor.
+    try {
+      const room = roomRepository.getRoom(roomCode);
+      const { similarityScore, roastText } = await generateRoundSummary({
+        topic: room.currentTopic,
+        canvasSnapshot: imageBase64,
+      });
+
+      const updatedRoom = roomRepository.recordRoundResult(roomCode, {
+        canvasSnapshot: imageBase64,
+        similarityScore,
+        roastText,
+      });
+
+      io.to(roomCode).emit('round:aiSummary', {
+        similarityScore,
+        roomTotalScore: updatedRoom.totalScore,
+        roastText,
+      });
+    } catch (error) {
+      console.error(`canvas:snapshotSubmit AI summary error: ${error.message}`);
     }
   });
 
