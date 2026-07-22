@@ -1,9 +1,9 @@
-'use strict';
+"use strict";
 
-const roomRepository = require('../../repositories/roomRepository');
-const { generateAvatarUrl } = require('../../utils/avatarGen');
-const { assignColor } = require('../../utils/colorAssign');
-const { generateTopicPool } = require('../../services/aiTopicGenService');
+const roomRepository = require("../../repositories/roomRepository");
+const { generateAvatarUrl } = require("../../utils/avatarGen");
+const { assignColor } = require("../../utils/colorAssign");
+const { generateTopicPool } = require("../../services/aiTopicGenService");
 
 /**
  * Registers room-related socket event handlers on a single connection:
@@ -15,7 +15,7 @@ const { generateTopicPool } = require('../../services/aiTopicGenService');
  * @param {import('socket.io').Socket} socket
  */
 function registerRoomHandlers(io, socket) {
-  socket.on('room:create', async ({ username }, callback) => {
+  socket.on("room:create", async ({ username }, callback) => {
     try {
       const avatarUrl = generateAvatarUrl(username);
       const color = assignColor([]);
@@ -30,8 +30,22 @@ function registerRoomHandlers(io, socket) {
       socket.join(room.code);
       socket.data.roomCode = room.code;
 
-      const topicPool = await generateTopicPool();
-      roomRepository.setTopicPool(room.code, topicPool);
+      // 1. Langsung kirim response agar pindah ke Lobby INSTAN (0.1 detik)
+      const initialRoom = roomRepository.getRoom(room.code);
+      callback({ room: initialRoom });
+
+      // 2. Jalankan Gemini AI secara Background (Fire & Forget)
+      generateTopicPool()
+        .then((topicPool) => {
+          roomRepository.setTopicPool(room.code, topicPool);
+          console.log(`[AI] Topik selesai di-generate untuk room ${room.code}`);
+        })
+        .catch((error) => {
+          console.error(
+            `[AI Error] Gagal generate topik untuk room ${room.code}:`,
+            error.message,
+          );
+        });
 
       const updatedRoom = roomRepository.getRoom(room.code);
       callback({ room: updatedRoom });
@@ -40,11 +54,11 @@ function registerRoomHandlers(io, socket) {
     }
   });
 
-  socket.on('room:join', ({ code, username }, callback) => {
+  socket.on("room:join", ({ code, username }, callback) => {
     try {
       const room = roomRepository.getRoom(code);
       if (!room) {
-        callback({ error: 'Room tidak ditemukan' });
+        callback({ error: "Room tidak ditemukan" });
         return;
       }
 
@@ -63,13 +77,13 @@ function registerRoomHandlers(io, socket) {
       socket.data.roomCode = code;
 
       callback({ room });
-      io.to(code).emit('room:playersUpdate', { players: room.players });
+      io.to(code).emit("room:playersUpdate", { players: room.players });
     } catch (error) {
       callback({ error: error.message });
     }
   });
 
-  socket.on('disconnect', () => {
+  socket.on("disconnect", () => {
     try {
       const { roomCode } = socket.data;
       if (!roomCode) return;
@@ -77,7 +91,7 @@ function registerRoomHandlers(io, socket) {
       const room = roomRepository.removePlayer(roomCode, socket.id);
       if (!room) return;
 
-      io.to(roomCode).emit('room:playersUpdate', { players: room.players });
+      io.to(roomCode).emit("room:playersUpdate", { players: room.players });
 
       if (room.players.length === 0) {
         console.log(`room kosong: ${roomCode}`);

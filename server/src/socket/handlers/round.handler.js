@@ -1,11 +1,13 @@
 "use strict";
 
 const roomRepository = require("../../repositories/roomRepository");
+
 // eslint-disable-next-line no-unused-vars -- reserved for future reconnect handling
 const {
   checkRoundOver,
   getRemainingSeconds,
 } = require("../../services/gameEngine");
+
 const {
   generateRoundSummary,
 } = require("../../services/aiRoundSummaryService");
@@ -47,8 +49,8 @@ function withTimeout(promise, timeoutMs) {
 }
 
 /**
- * @param {import('socket.io').Server} io
- * @param {import('socket.io').Socket} socket
+ * @param {import("socket.io").Server} io
+ * @param {import("socket.io").Socket} socket
  */
 function registerRoundHandlers(io, socket) {
   socket.on("game:start", ({ roomCode }, callback) => {
@@ -56,7 +58,10 @@ function registerRoundHandlers(io, socket) {
       const room = roomRepository.getRoom(roomCode);
 
       if (!room) {
-        callback({ error: "Room tidak ditemukan" });
+        callback({
+          error: "Room tidak ditemukan",
+        });
+
         return;
       }
 
@@ -64,6 +69,7 @@ function registerRoundHandlers(io, socket) {
         callback({
           error: "Hanya host yang bisa mulai ronde",
         });
+
         return;
       }
 
@@ -71,6 +77,7 @@ function registerRoundHandlers(io, socket) {
         callback({
           error: "Ronde sebelumnya masih berlangsung atau sedang dinilai",
         });
+
         return;
       }
 
@@ -83,6 +90,7 @@ function registerRoundHandlers(io, socket) {
         callback({
           error: "Semua topic sudah dipakai",
         });
+
         return;
       }
 
@@ -97,14 +105,24 @@ function registerRoundHandlers(io, socket) {
 
       roundTimers.set(roomCode, timeoutId);
 
-      callback({ success: true });
+      callback({
+        success: true,
+      });
     } catch (error) {
-      callback({ error: error.message });
+      callback({
+        error: error.message,
+      });
     }
   });
 
-  socket.on("canvas:stroke", ({ roomCode, x, y, type, color, size }) => {
+  socket.on("canvas:stroke", ({ roomCode, x, y, type, color, size, tool }) => {
     try {
+      const room = roomRepository.getRoom(roomCode);
+
+      if (!room) {
+        return;
+      }
+
       roomRepository.addStroke(roomCode, {
         socketId: socket.id,
         x,
@@ -112,15 +130,17 @@ function registerRoundHandlers(io, socket) {
         type,
         color,
         size,
+        tool,
       });
 
       socket.to(roomCode).emit("canvas:strokeBroadcast", {
         socketId: socket.id,
-        color,
         x,
         y,
         type,
+        color,
         size,
+        tool,
       });
     } catch (error) {
       console.error(`canvas:stroke error: ${error.message}`);
@@ -166,10 +186,12 @@ function registerRoundHandlers(io, socket) {
         console.error(
           `canvas:clear ditolak: ${socket.id} bukan host room ${roomCode}`,
         );
+
         return;
       }
 
       roomRepository.clearStrokes(roomCode);
+
       io.to(roomCode).emit("canvas:clear");
     } catch (error) {
       console.error(`canvas:clear error: ${error.message}`);
@@ -185,7 +207,10 @@ function registerRoundHandlers(io, socket) {
         const room = roomRepository.getRoom(roomCode);
 
         if (!room) {
-          callback({ error: "Room tidak ditemukan" });
+          callback({
+            error: "Room tidak ditemukan",
+          });
+
           return;
         }
 
@@ -193,6 +218,7 @@ function registerRoundHandlers(io, socket) {
           callback({
             error: "Hanya host yang bisa submit snapshot",
           });
+
           return;
         }
 
@@ -200,24 +226,31 @@ function registerRoundHandlers(io, socket) {
           callback({
             error: "Canvas snapshot tidak ditemukan",
           });
+
           return;
         }
 
         /*
-         * Disimpan sebelum await Gemini agar hasil AI tetap memakai
-         * topik ronde yang benar.
+         * Simpan topik sebelum menunggu Gemini.
+         * Dengan begitu hasil AI tetap memakai topik
+         * dari ronde yang sedang dinilai.
          */
         roundTopic = room.currentTopic;
 
         roomRepository.setCanvasSnapshot(roomCode, imageBase64);
 
         /*
-         * Host langsung menerima acknowledgement tanpa perlu
-         * menunggu proses AI.
+         * Host langsung menerima acknowledgement.
+         * Client tidak perlu menunggu Gemini selesai.
          */
-        callback({ success: true });
+        callback({
+          success: true,
+        });
       } catch (error) {
-        callback({ error: error.message });
+        callback({
+          error: error.message,
+        });
+
         return;
       }
 
@@ -265,9 +298,10 @@ function registerRoundHandlers(io, socket) {
         let roomTotalScore = roomRepository.getRoom(roomCode)?.totalScore ?? 0;
 
         try {
-          const updatedRoom = roomRepository.recordRoundResult(roomCode, {
-            ...fallbackResult,
-          });
+          const updatedRoom = roomRepository.recordRoundResult(
+            roomCode,
+            fallbackResult,
+          );
 
           roomTotalScore = updatedRoom?.totalScore ?? roomTotalScore;
         } catch (recordError) {
@@ -277,8 +311,8 @@ function registerRoundHandlers(io, socket) {
         }
 
         /*
-         * Event ini wajib tetap dikirim meskipun AI gagal.
-         * Frontend menunggu event ini untuk menghentikan loading.
+         * Tetap dikirim ketika Gemini gagal supaya
+         * frontend tidak loading selamanya.
          */
         io.to(roomCode).emit("round:aiSummary", {
           ...fallbackResult,
@@ -294,7 +328,10 @@ function registerRoundHandlers(io, socket) {
       const room = roomRepository.getRoom(roomCode);
 
       if (!room) {
-        callback({ error: "Room tidak ditemukan" });
+        callback({
+          error: "Room tidak ditemukan",
+        });
+
         return;
       }
 
@@ -302,6 +339,7 @@ function registerRoundHandlers(io, socket) {
         callback({
           error: "Hanya host yang bisa mengakhiri ronde",
         });
+
         return;
       }
 
@@ -314,15 +352,21 @@ function registerRoundHandlers(io, socket) {
 
       endRoundForRoom(io, roomCode);
 
-      callback({ success: true });
+      callback({
+        success: true,
+      });
     } catch (error) {
-      callback({ error: error.message });
+      callback({
+        error: error.message,
+      });
     }
   });
 }
 
 /**
- * @param {import('socket.io').Server} io
+ * Mengakhiri ronde aktif dan memberi tahu semua pemain.
+ *
+ * @param {import("socket.io").Server} io
  * @param {string} roomCode
  */
 function endRoundForRoom(io, roomCode) {
