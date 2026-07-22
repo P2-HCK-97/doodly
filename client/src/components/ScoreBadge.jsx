@@ -24,15 +24,17 @@ export default function ScoreBadge({ totalScore = 0 }) {
   }, [totalScore]);
 
   return (
-    <div className="flex items-center gap-3 border-[3px] border-black bg-white px-4 py-2 shadow-[3px_3px_0px_0px_#000000]">
-      <span className="text-xs font-bold uppercase">Skor</span>
-      <span className="text-lg font-black">{totalScore}</span>
+    <>
+      <div className="flex items-center gap-3 border-[3px] border-black bg-white px-4 py-2 shadow-[3px_3px_0px_0px_#000000]">
+        <span className="text-xs font-bold uppercase">Skor</span>
+        <span className="text-lg font-black">{totalScore}</span>
 
-      {showDelta && (
-        <span className="bg-[#4BEB98] text-black text-xs font-black px-2 py-0.5 rounded-full animate-pulse">
-          +{delta}
-        </span>
-      )}
-    </div>
+        {showDelta && (
+          <span className="bg-[#4BEB98] text-black text-xs font-black px-2 py-0.5 rounded-full animate-pulse">
+            +{delta}
+          </span>
+        )}
+      </div>
+    </>
   );
 }
