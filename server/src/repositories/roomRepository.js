@@ -56,6 +56,7 @@ function createRoom({ hostSocketId, hostUsername, color, avatarUrl }) {
     durationSec: 0,
     roundHistory: [],
     totalScore: 0,
+    canvasSnapshot: null,
   };
 
   rooms.set(code, room);
@@ -65,6 +66,15 @@ function createRoom({ hostSocketId, hostUsername, color, avatarUrl }) {
 
 function getRoom(code) {
   return rooms.get(code) || null;
+}
+
+function setCanvasSnapshot(code, imageBase64) {
+  const room = rooms.get(code);
+  if (!room) return null;
+
+  room.canvasSnapshot = imageBase64;
+
+  return room;
 }
 
 /**
@@ -184,6 +194,7 @@ module.exports = {
   generateRoomCode,
   createRoom,
   getRoom,
+  setCanvasSnapshot,
   addPlayer,
   removePlayer,
   setTopicPool,
