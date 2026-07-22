@@ -1,45 +1,40 @@
 "use strict";
 
 /**
- * In-memory data layer for all active rooms.
- * Pure CRUD on the `rooms` Map only — no business-logic validation
- * (e.g. "room full", "whose turn is it") lives here; that belongs
- * to the handlers/services that call into this repository.
+ * Penyimpanan sementara seluruh room aktif.
+ *
+ * @type {Map<string, object>}
  */
-
-/** @type {Map<string, object>} */
 const rooms = new Map();
 
 const CODE_LENGTH = 5;
-// Excludes visually-similar chars: I, O, 0, 1
+const DEFAULT_MAX_ROUNDS = 2;
+
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/**
- * Generates a random room code, retrying on collision against
- * the currently active rooms in the Map.
- */
 function generateRoomCode() {
-  let code;
+  let code = "";
+
   do {
     code = "";
-    for (let i = 0; i < CODE_LENGTH; i += 1) {
-      code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+
+    for (let index = 0; index < CODE_LENGTH; index += 1) {
+      const randomIndex = Math.floor(Math.random() * CODE_CHARS.length);
+
+      code += CODE_CHARS[randomIndex];
     }
   } while (rooms.has(code));
 
   return code;
 }
 
-/**
- * Creates a new room with the host as its first player.
- * topicPool starts empty — filled later by aiTopicGenService.
- */
 function createRoom({ hostSocketId, hostUsername, color, avatarUrl }) {
   const code = generateRoomCode();
 
   const room = {
     code,
     hostSocketId,
+
     players: [
       {
         socketId: hostSocketId,
@@ -49,15 +44,24 @@ function createRoom({ hostSocketId, hostUsername, color, avatarUrl }) {
         isHost: true,
       },
     ],
+
+    phase: "lobby",
+
+    currentRound: 0,
+    maxRounds: DEFAULT_MAX_ROUNDS,
+
     topicPool: [],
     usedTopics: [],
     currentTopic: null,
+
     strokes: [],
+    canvasSnapshot: null,
+
     roundStartAt: null,
     durationSec: 0,
+
     roundHistory: [],
     totalScore: 0,
-    canvasSnapshot: null,
   };
 
   rooms.set(code, room);
@@ -69,93 +73,112 @@ function getRoom(code) {
   return rooms.get(code) || null;
 }
 
-function setCanvasSnapshot(code, imageBase64) {
-  const room = rooms.get(code);
-  if (!room) return null;
-
-  room.canvasSnapshot = imageBase64;
-
-  return room;
-}
-
-/**
- * Adds a player, or replaces the existing entry if the same socketId
- * already joined (e.g. accidental double-click firing room:join twice)
- * so the room never ends up with duplicate players for one socket.
- */
 function addPlayer(code, player) {
   const room = rooms.get(code);
-  if (!room) return null;
 
-  const playerObj = {
+  if (!room) {
+    return null;
+  }
+
+  const playerData = {
     ...player,
     isHost: player.socketId === room.hostSocketId,
   };
 
-  const existingIndex = room.players.findIndex(
-    (existing) => existing.socketId === player.socketId,
+  const existingPlayerIndex = room.players.findIndex(
+    (existingPlayer) => existingPlayer.socketId === player.socketId,
   );
 
-  if (existingIndex === -1) {
-    room.players.push(playerObj);
+  if (existingPlayerIndex >= 0) {
+    room.players[existingPlayerIndex] = playerData;
   } else {
-    room.players[existingIndex] = playerObj;
+    room.players.push(playerData);
   }
 
   return room;
 }
 
-/**
- * Removes a player by socketId. Never deletes the room even if it
- * ends up with zero players — kept alive in case they reconnect later.
- */
 function removePlayer(code, socketId) {
   const room = rooms.get(code);
-  if (!room) return null;
+
+  if (!room) {
+    return null;
+  }
 
   room.players = room.players.filter((player) => player.socketId !== socketId);
+
+  /*
+   * Jika host keluar dan masih ada pemain,
+   * pemain pertama menjadi host baru.
+   */
+  if (socketId === room.hostSocketId && room.players.length > 0) {
+    room.hostSocketId = room.players[0].socketId;
+
+    room.players = room.players.map((player) => ({
+      ...player,
+      isHost: player.socketId === room.hostSocketId,
+    }));
+  }
 
   return room;
 }
 
 function setTopicPool(code, topics) {
   const room = rooms.get(code);
-  if (!room) return null;
 
-  room.topicPool = topics;
+  if (!room) {
+    return null;
+  }
+
+  room.topicPool = Array.isArray(topics) ? topics : [];
 
   return room;
 }
 
-/**
- * Picks one random topic not yet in usedTopics, resets the canvas
- * strokes, and starts the round clock. Returns null when every topic
- * in the pool has already been used (caller decides what happens next).
- */
 function startNextRound(code, durationSec) {
   const room = rooms.get(code);
-  if (!room) return null;
+
+  if (!room) {
+    return null;
+  }
+
+  if (room.currentRound >= room.maxRounds) {
+    return null;
+  }
 
   const remainingTopics = room.topicPool.filter(
     (topic) => !room.usedTopics.includes(topic),
   );
-  if (remainingTopics.length === 0) return null;
 
-  const topic =
-    remainingTopics[Math.floor(Math.random() * remainingTopics.length)];
+  if (remainingTopics.length === 0) {
+    return null;
+  }
 
+  const randomIndex = Math.floor(Math.random() * remainingTopics.length);
+
+  const topic = remainingTopics[randomIndex];
+
+  room.currentRound += 1;
   room.currentTopic = topic;
   room.usedTopics.push(topic);
+
+  room.phase = "playing";
+
   room.strokes = [];
+  room.canvasSnapshot = null;
+
   room.roundStartAt = Date.now();
-  room.durationSec = durationSec;
+  room.durationSec = Number(durationSec) || 90;
 
   return room;
 }
 
 function addStroke(code, stroke) {
   const room = rooms.get(code);
-  if (!room) return null;
+
+  if (!room) {
+    return null;
+  }
 
   room.strokes.push(stroke);
 
@@ -164,21 +187,31 @@ function addStroke(code, stroke) {
 
 function clearStrokes(code) {
   const room = rooms.get(code);
-  if (!room) return null;
+
+  if (!room) {
+    return null;
+  }
 
   room.strokes = [];
 
   return room;
 }
 
-/**
- * Appends the round's AI result to roundHistory, folds the similarity
- * score into the room's cumulative totalScore, and clears currentTopic
- * / roundStartAt so the room is ready for the next round.
- */
+function setCanvasSnapshot(code, imageBase64) {
+  const room = rooms.get(code);
+
+  if (!room) {
+    return null;
+  }
+
+  room.canvasSnapshot = imageBase64;
+
+  return room;
+}
+
 function recordRoundResult(
   code,
-  { topic, canvasSnapshot, similarityScore, roastText },
+  { roundNumber, topic, canvasSnapshot, similarityScore, roastText },
 ) {
   const room = rooms.get(code);
 
@@ -186,20 +219,50 @@ function recordRoundResult(
     return null;
   }
 
-  const validScore = Math.min(100, Math.max(0, Number(similarityScore) || 0));
+  const safeRoundNumber = Number(roundNumber) || room.currentRound;
 
-  room.roundHistory.push({
-    topic: topic || room.currentTopic,
-    canvasSnapshot,
-    similarityScore: validScore,
-    roastText,
-  });
+  const safeScore = Math.min(100, Math.max(0, Number(similarityScore) || 0));
 
-  room.totalScore += validScore;
-  room.currentTopic = null;
+  const existingResultIndex = room.roundHistory.findIndex(
+    (result) => Number(result.roundNumber) === safeRoundNumber,
+  );
+
+  const result = {
+    roundNumber: safeRoundNumber,
+
+    topic: topic || room.currentTopic || "Topik tidak tersedia",
+
+    canvasSnapshot: canvasSnapshot || null,
+
+    similarityScore: safeScore,
+
+    roastText: roastText || "Gambar yang sangat unik!",
+  };
+
+  if (existingResultIndex >= 0) {
+    const previousScore =
+      Number(room.roundHistory[existingResultIndex].similarityScore) || 0;
+
+    room.totalScore = room.totalScore - previousScore + safeScore;
+
+    room.roundHistory[existingResultIndex] = result;
+  } else {
+    room.roundHistory.push(result);
+    room.totalScore += safeScore;
+  }
+
+  room.roundHistory.sort(
+    (firstResult, secondResult) =>
+      Number(firstResult.roundNumber) - Number(secondResult.roundNumber),
+  );
+
   room.roundStartAt = null;
+  room.durationSec = 0;
   room.canvasSnapshot = null;
   room.strokes = [];
+
+  room.phase =
+    room.currentRound >= room.maxRounds ? "finished" : "round-result";
 
   return room;
 }
@@ -209,16 +272,17 @@ function deleteRoom(code) {
 }
 
 module.exports = {
+  DEFAULT_MAX_ROUNDS,
   generateRoomCode,
   createRoom,
   getRoom,
-  setCanvasSnapshot,
   addPlayer,
   removePlayer,
   setTopicPool,
   startNextRound,
   addStroke,
   clearStrokes,
+  setCanvasSnapshot,
   recordRoundResult,
   deleteRoom,
 };
