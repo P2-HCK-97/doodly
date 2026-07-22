@@ -13,9 +13,9 @@ export default function App() {
       <GameProvider>
         <Routes>
           <Route path="/" element={<Home />} />
-        <Route path="/lobby/X7A9B" element={<Lobby />} />
-        <Route path="/game/:roomCode" element={<InGame />} />
-        <Route path="/result/:roomCode" element={<Result />} />
+          <Route path="/lobby/X7A9B" element={<Lobby />} />
+          <Route path="/game/:roomCode" element={<InGame />} />
+          <Route path="/result/:roomCode" element={<Result />} />
         </Routes >
       </GameProvider>
     </>
