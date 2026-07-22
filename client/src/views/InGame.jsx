@@ -21,7 +21,7 @@ import {
 } from "../constants/gameConfig";
 
 const CURSOR_THROTTLE_MS = 50;
-const DEFAULT_MAX_ROUNDS = 3;
+const DEFAULT_MAX_ROUNDS = 2;
 
 export default function InGame() {
   const { roomCode } = useParams();
@@ -36,6 +36,8 @@ export default function InGame() {
   const [maxRounds, setMaxRounds] = useState(DEFAULT_MAX_ROUNDS);
 
   const [roundDuration, setRoundDuration] = useState(DEFAULT_ROUND_DURATION);
+
+  const [roundEndsAt, setRoundEndsAt] = useState(state.endsAt || null);
 
   const [brushColor, setBrushColor] = useState(DEFAULT_BRUSH_COLOR);
 
@@ -93,6 +95,7 @@ export default function InGame() {
     const handleRoundStarted = ({
       topic,
       durationSec,
+      endsAt,
       currentRound,
       maxRounds: serverMaxRounds,
     }) => {
@@ -109,6 +112,8 @@ export default function InGame() {
 
       setRoundDuration(Number(durationSec) || DEFAULT_ROUND_DURATION);
 
+      setRoundEndsAt(Number(endsAt) || null);
+
       setIsModalOpen(false);
       setIsAiLoading(false);
       setSummaryData(null);
@@ -124,6 +129,7 @@ export default function InGame() {
           currentRound: nextRound,
           maxRounds: nextMaxRounds,
           durationSec,
+          endsAt,
         },
       });
     };
@@ -142,6 +148,7 @@ export default function InGame() {
       setRoundNumber(finishedRound);
       setMaxRounds(totalRounds);
       setRemoteCursors({});
+      setRoundEndsAt(null);
 
       setIsModalOpen(true);
       setIsAiLoading(true);
@@ -457,8 +464,9 @@ export default function InGame() {
           </div>
 
           <RoundTimer
-            key={`${roundNumber}-${roundDuration}`}
+            key={`${roundNumber}-${roundEndsAt}`}
             durationSec={roundDuration}
+            endsAt={roundEndsAt}
             onTimeUp={handleTimeUp}
             isRunning={!isModalOpen}
           />

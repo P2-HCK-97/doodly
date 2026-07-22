@@ -3,45 +3,94 @@ import { DEFAULT_ROUND_DURATION } from "../constants/gameConfig";
 
 export default function RoundTimer({
   durationSec = DEFAULT_ROUND_DURATION,
+  endsAt = null,
   onTimeUp,
   isRunning = true,
 }) {
-  const [timeLeft, setTimeLeft] = useState(durationSec);
+  const [timeLeft, setTimeLeft] = useState(
+    Number(durationSec) || DEFAULT_ROUND_DURATION,
+  );
 
+  const targetTimeRef = useRef(null);
   const hasFinishedRef = useRef(false);
   const onTimeUpRef = useRef(onTimeUp);
 
+  /*
+   * Menyimpan callback terbaru tanpa harus membuat
+   * interval timer ulang setiap render.
+   */
   useEffect(() => {
     onTimeUpRef.current = onTimeUp;
   }, [onTimeUp]);
 
+  /*
+   * Reset timer ketika ronde baru dimulai.
+   *
+   * Jika server mengirim endsAt, gunakan timestamp server.
+   * Jika tidak ada, gunakan durationSec sebagai fallback.
+   */
   useEffect(() => {
-    setTimeLeft(durationSec);
-    hasFinishedRef.current = false;
-  }, [durationSec]);
+    const serverEndsAt = Number(endsAt);
+    const safeDuration =
+      Number(durationSec) || DEFAULT_ROUND_DURATION;
 
+    targetTimeRef.current =
+      Number.isFinite(serverEndsAt) && serverEndsAt > 0
+        ? serverEndsAt
+        : Date.now() + safeDuration * 1000;
+
+    const initialRemaining = Math.max(
+      0,
+      Math.ceil(
+        (targetTimeRef.current - Date.now()) / 1000,
+      ),
+    );
+
+    setTimeLeft(initialRemaining);
+    hasFinishedRef.current = false;
+  }, [durationSec, endsAt]);
+
+  /*
+   * Timer tampilan client.
+   *
+   * Interval dibuat lebih cepat dari satu detik supaya
+   * angka tetap akurat terhadap timestamp endsAt server.
+   */
   useEffect(() => {
-    if (!isRunning) {
-      return;
+    if (!isRunning || !targetTimeRef.current) {
+      return undefined;
     }
 
-    if (timeLeft <= 0) {
-      if (!hasFinishedRef.current) {
+    const updateTimer = () => {
+      const remainingSeconds = Math.max(
+        0,
+        Math.ceil(
+          (targetTimeRef.current - Date.now()) / 1000,
+        ),
+      );
+
+      setTimeLeft(remainingSeconds);
+
+      if (
+        remainingSeconds <= 0 &&
+        !hasFinishedRef.current
+      ) {
         hasFinishedRef.current = true;
         onTimeUpRef.current?.();
       }
+    };
 
-      return;
-    }
+    updateTimer();
 
-    const timeoutId = setTimeout(() => {
-      setTimeLeft((previousTime) => Math.max(0, previousTime - 1));
-    }, 1000);
+    const intervalId = window.setInterval(
+      updateTimer,
+      250,
+    );
 
     return () => {
-      clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
     };
-  }, [timeLeft, isRunning]);
+  }, [isRunning, durationSec, endsAt]);
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
@@ -56,7 +105,9 @@ export default function RoundTimer({
   return (
     <div
       className={`border-[3px] border-black px-4 py-2 font-black text-lg shadow-[3px_3px_0px_0px_#000000] ${
-        isUrgent ? "bg-[#EB4B98] text-white" : "bg-white text-black"
+        isUrgent
+          ? "bg-[#EB4B98] text-white animate-pulse"
+          : "bg-white text-black"
       }`}
     >
       {formattedTime}
