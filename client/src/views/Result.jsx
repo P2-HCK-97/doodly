@@ -148,10 +148,6 @@ export default function Result() {
     };
   }, [history.length, isLoading]);
 
-  const handlePlayAgain = () => {
-    navigate("/");
-  };
-
   const handleBackHome = () => {
     navigate("/");
   };
@@ -313,15 +309,6 @@ export default function Result() {
           </section>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-            {/* <button
-              type="button"
-              onClick={handlePlayAgain}
-              className="w-full sm:w-auto bg-[#FFE600] hover:bg-[#EB4B98] border-[3px] border-black px-8 py-3.5 font-black text-sm uppercase shadow-[4px_4px_0px_0px_#000000] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Main Lagi
-            </button> */}
-
             <button
               type="button"
               onClick={handleBackHome}
