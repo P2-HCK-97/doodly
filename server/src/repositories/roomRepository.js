@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 /**
  * In-memory data layer for all active rooms.
@@ -12,7 +12,7 @@ const rooms = new Map();
 
 const CODE_LENGTH = 5;
 // Excludes visually-similar chars: I, O, 0, 1
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 /**
  * Generates a random room code, retrying on collision against
@@ -21,7 +21,7 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function generateRoomCode() {
   let code;
   do {
-    code = '';
+    code = "";
     for (let i = 0; i < CODE_LENGTH; i += 1) {
       code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
     }
@@ -87,7 +87,7 @@ function addPlayer(code, player) {
   if (!room) return null;
 
   const existingIndex = room.players.findIndex(
-    (existing) => existing.socketId === player.socketId
+    (existing) => existing.socketId === player.socketId,
   );
 
   if (existingIndex === -1) {
@@ -131,11 +131,12 @@ function startNextRound(code, durationSec) {
   if (!room) return null;
 
   const remainingTopics = room.topicPool.filter(
-    (topic) => !room.usedTopics.includes(topic)
+    (topic) => !room.usedTopics.includes(topic),
   );
   if (remainingTopics.length === 0) return null;
 
-  const topic = remainingTopics[Math.floor(Math.random() * remainingTopics.length)];
+  const topic =
+    remainingTopics[Math.floor(Math.random() * remainingTopics.length)];
 
   room.currentTopic = topic;
   room.usedTopics.push(topic);
@@ -169,19 +170,30 @@ function clearStrokes(code) {
  * score into the room's cumulative totalScore, and clears currentTopic
  * / roundStartAt so the room is ready for the next round.
  */
-function recordRoundResult(code, { canvasSnapshot, similarityScore, roastText }) {
+function recordRoundResult(
+  code,
+  { topic, canvasSnapshot, similarityScore, roastText },
+) {
   const room = rooms.get(code);
-  if (!room) return null;
+
+  if (!room) {
+    return null;
+  }
+
+  const validScore = Math.min(100, Math.max(0, Number(similarityScore) || 0));
 
   room.roundHistory.push({
-    topic: room.currentTopic,
+    topic: topic || room.currentTopic,
     canvasSnapshot,
-    similarityScore,
+    similarityScore: validScore,
     roastText,
   });
-  room.totalScore += similarityScore;
+
+  room.totalScore += validScore;
   room.currentTopic = null;
   room.roundStartAt = null;
+  room.canvasSnapshot = null;
+  room.strokes = [];
 
   return room;
 }
