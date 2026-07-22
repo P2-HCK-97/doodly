@@ -10,7 +10,7 @@
 /** @type {Map<string, object>} */
 const rooms = new Map();
 
-const CODE_LENGTH = 4;
+const CODE_LENGTH = 5;
 // Excludes visually-similar chars: I, O, 0, 1
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
