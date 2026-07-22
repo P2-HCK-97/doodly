@@ -1,5 +1,5 @@
 export const DEFAULT_ROUND_DURATION = 90;
-export const DEFAULT_MAX_ROUNDS = 3;
+export const DEFAULT_MAX_ROUNDS = 2;
 export const MIN_PLAYERS_TO_START = 2;
 
 export const DEFAULT_BRUSH_COLOR = "#000000";

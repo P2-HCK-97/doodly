@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { CheckSquare, X } from "lucide-react";
 
@@ -13,6 +13,7 @@ import ToolBar from "../components/ToolBar";
 import { useGame } from "../contexts/GameContext";
 import socket from "../services/socket";
 import { showToast } from "../utils/toastify";
+import useGameSocket from "../hooks/useGameSocket";
 
 import {
   DEFAULT_BRUSH_COLOR,
@@ -31,76 +32,33 @@ export default function InGame() {
   const activeRoomCode = roomCode || state.roomCode;
 
   const [totalScore, setTotalScore] = useState(state.totalScore || 0);
-
   const [roundNumber, setRoundNumber] = useState(1);
   const [maxRounds, setMaxRounds] = useState(DEFAULT_MAX_ROUNDS);
-
   const [roundDuration, setRoundDuration] = useState(DEFAULT_ROUND_DURATION);
-
   const [roundEndsAt, setRoundEndsAt] = useState(state.endsAt || null);
-
   const [brushColor, setBrushColor] = useState(DEFAULT_BRUSH_COLOR);
-
   const [brushSize, setBrushSize] = useState(DEFAULT_BRUSH_SIZE);
-
   const [tool, setTool] = useState("pen");
-
   const [isModalOpen, setIsModalOpen] = useState(false);
-
   const [isAiLoading, setIsAiLoading] = useState(false);
-
   const [summaryData, setSummaryData] = useState(null);
-
   const [isLastRound, setIsLastRound] = useState(false);
-
   const [remoteCursors, setRemoteCursors] = useState({});
 
   const canvasRef = useRef(null);
   const lastCursorEmitAtRef = useRef(0);
   const snapshotSubmittedRef = useRef(false);
-
-  const isHostRef = useRef(false);
-  const currentTopicRef = useRef(state.currentTopic);
   const roundNumberRef = useRef(roundNumber);
+  const currentTopicRef = useRef(state.currentTopic);
 
   const players = Array.isArray(state.players) ? state.players : [];
+  const currentUser = players.find((player) => player.socketId === socket.id) || null;
+  const isHost = Boolean(currentUser?.isHost || socket.id === state.hostSocketId);
 
-  const currentUser =
-    players.find((player) => player.socketId === socket.id) || null;
-
-  const isHost = Boolean(
-    currentUser?.isHost || socket.id === state.hostSocketId,
-  );
-
-  useEffect(() => {
-    isHostRef.current = isHost;
-  }, [isHost]);
-
-  useEffect(() => {
-    currentTopicRef.current = state.currentTopic;
-  }, [state.currentTopic]);
-
-  useEffect(() => {
-    roundNumberRef.current = roundNumber;
-  }, [roundNumber]);
-
-  useEffect(() => {
-    const handlePlayersUpdate = ({ players: updatedPlayers }) => {
-      dispatch({
-        type: "SET_PLAYERS",
-        payload: updatedPlayers,
-      });
-    };
-
-    const handleRoundStarted = ({
-      topic,
-      durationSec,
-      endsAt,
-      currentRound,
-      maxRounds: serverMaxRounds,
-    }) => {
+  useGameSocket({
+    onRoundStarted: (payload) => {
+      const { topic, durationSec, endsAt, currentRound, maxRounds: serverMaxRounds } = payload;
       const nextRound = Number(currentRound) || 1;
-
       const nextMaxRounds = Number(serverMaxRounds) || DEFAULT_MAX_ROUNDS;
 
       currentTopicRef.current = topic;
@@ -109,11 +67,8 @@ export default function InGame() {
 
       setRoundNumber(nextRound);
       setMaxRounds(nextMaxRounds);
-
       setRoundDuration(Number(durationSec) || DEFAULT_ROUND_DURATION);
-
       setRoundEndsAt(Number(endsAt) || null);
-
       setIsModalOpen(false);
       setIsAiLoading(false);
       setSummaryData(null);
@@ -121,26 +76,11 @@ export default function InGame() {
       setRemoteCursors({});
 
       canvasRef.current?.clear();
+    },
 
-      dispatch({
-        type: "ROUND_STARTED",
-        payload: {
-          topic,
-          currentRound: nextRound,
-          maxRounds: nextMaxRounds,
-          durationSec,
-          endsAt,
-        },
-      });
-    };
-
-    const handleRoundOver = ({
-      topic,
-      currentRound,
-      maxRounds: serverMaxRounds,
-    }) => {
+    onRoundOver: (payload) => {
+      const { topic, currentRound, maxRounds: serverMaxRounds } = payload;
       const finishedRound = Number(currentRound) || roundNumberRef.current;
-
       const totalRounds = Number(serverMaxRounds) || maxRounds;
 
       roundNumberRef.current = finishedRound;
@@ -149,34 +89,21 @@ export default function InGame() {
       setMaxRounds(totalRounds);
       setRemoteCursors({});
       setRoundEndsAt(null);
-
       setIsModalOpen(true);
       setIsAiLoading(true);
 
+      // Hook gak dispatch otomatis buat event ini — jadi kita dispatch manual
       dispatch({
         type: "ROUND_OVER",
-        payload: {
-          topic,
-          currentRound: finishedRound,
-          maxRounds: totalRounds,
-        },
+        payload: { topic, currentRound: finishedRound, maxRounds: totalRounds },
       });
 
-      if (
-        !isHostRef.current ||
-        !canvasRef.current ||
-        snapshotSubmittedRef.current
-      ) {
-        return;
-      }
+      if (!isHost || !canvasRef.current || snapshotSubmittedRef.current) return;
 
       const imageBase64 = canvasRef.current.getSnapshot();
-
       if (!imageBase64) {
         setIsAiLoading(false);
-
         showToast.error("Snapshot canvas gagal dibuat");
-
         return;
       }
 
@@ -184,25 +111,19 @@ export default function InGame() {
 
       socket.emit(
         "canvas:snapshotSubmit",
-        {
-          roomCode: activeRoomCode,
-          imageBase64,
-        },
+        { roomCode: activeRoomCode, imageBase64 },
         (response) => {
           if (response?.error) {
             snapshotSubmittedRef.current = false;
-
             setIsAiLoading(false);
             showToast.error(response.error);
           }
         },
       );
-    };
+    },
 
-    const handleAiSummary = (data) => {
-      const resultRoundNumber =
-        Number(data.roundNumber) || roundNumberRef.current;
-
+    onAiSummary: (data) => {
+      const resultRoundNumber = Number(data.roundNumber) || roundNumberRef.current;
       const resultMaxRounds = Number(data.maxRounds) || maxRounds;
 
       const result = {
@@ -213,18 +134,17 @@ export default function InGame() {
         canvasSnapshot: data.canvasSnapshot || null,
       };
 
-      const finalRound = Boolean(
-        data.isLastRound || resultRoundNumber >= resultMaxRounds,
-      );
+      const finalRound = Boolean(data.isLastRound || resultRoundNumber >= resultMaxRounds);
 
       setRoundNumber(resultRoundNumber);
       setMaxRounds(resultMaxRounds);
       setSummaryData(result);
       setIsAiLoading(false);
       setIsLastRound(finalRound);
-
       setTotalScore(Number(data.roomTotalScore) || 0);
 
+      // Dispatch manual di sini — hook sengaja gak dispatch buat event ini,
+      // biar shape datanya sesuai kebutuhan InGame (roundNumber asli, maxRounds, isLastRound, aiError)
       dispatch({
         type: "AI_SUMMARY_RECEIVED",
         payload: {
@@ -236,88 +156,36 @@ export default function InGame() {
         },
       });
 
-      if (data.aiError) {
-        showToast.error("AI gagal menilai, hasil fallback digunakan");
-      }
-    };
+      if (data.aiError) showToast.error("AI gagal menilai, hasil fallback digunakan");
+    },
 
-    const handleCursorBroadcast = (cursorData) => {
-      if (!cursorData?.socketId) {
-        return;
-      }
+    onCursorBroadcast: (cursorData) => {
+      if (!cursorData?.socketId) return;
+      setRemoteCursors((prev) => ({ ...prev, [cursorData.socketId]: cursorData }));
+    },
 
-      setRemoteCursors((previousCursors) => ({
-        ...previousCursors,
-        [cursorData.socketId]: cursorData,
-      }));
-    };
-
-    const handleStrokeBroadcast = (strokeData) => {
+    onStrokeBroadcast: (strokeData) => {
       canvasRef.current?.drawStroke(strokeData);
-    };
+    },
 
-    const handleCanvasClear = () => {
+    onCanvasClear: () => {
       canvasRef.current?.clear();
       setRemoteCursors({});
-    };
-
-    socket.on("room:playersUpdate", handlePlayersUpdate);
-
-    socket.on("round:started", handleRoundStarted);
-
-    socket.on("round:over", handleRoundOver);
-
-    socket.on("round:aiSummary", handleAiSummary);
-
-    socket.on("canvas:cursorBroadcast", handleCursorBroadcast);
-
-    socket.on("canvas:strokeBroadcast", handleStrokeBroadcast);
-
-    socket.on("canvas:clear", handleCanvasClear);
-
-    return () => {
-      socket.off("room:playersUpdate", handlePlayersUpdate);
-
-      socket.off("round:started", handleRoundStarted);
-
-      socket.off("round:over", handleRoundOver);
-
-      socket.off("round:aiSummary", handleAiSummary);
-
-      socket.off("canvas:cursorBroadcast", handleCursorBroadcast);
-
-      socket.off("canvas:strokeBroadcast", handleStrokeBroadcast);
-
-      socket.off("canvas:clear", handleCanvasClear);
-    };
-  }, [activeRoomCode, dispatch, maxRounds]);
+    },
+  });
 
   const handleStroke = (stroke) => {
-    if (!activeRoomCode || isModalOpen) {
-      return;
-    }
-
-    socket.emit("canvas:stroke", {
-      roomCode: activeRoomCode,
-      ...stroke,
-    });
+    if (!activeRoomCode || isModalOpen) return;
+    socket.emit("canvas:stroke", { roomCode: activeRoomCode, ...stroke });
   };
 
   const handleMouseMoveCanvas = (event) => {
-    if (!activeRoomCode || isModalOpen) {
-      return;
-    }
-
+    if (!activeRoomCode || isModalOpen) return;
     const now = Date.now();
-
-    if (now - lastCursorEmitAtRef.current < CURSOR_THROTTLE_MS) {
-      return;
-    }
-
+    if (now - lastCursorEmitAtRef.current < CURSOR_THROTTLE_MS) return;
     lastCursorEmitAtRef.current = now;
 
     const rect = event.currentTarget.getBoundingClientRect();
-
     socket.emit("canvas:cursorMove", {
       roomCode: activeRoomCode,
       x: event.clientX - rect.left,
@@ -326,77 +194,37 @@ export default function InGame() {
   };
 
   const handleTimeUp = () => {
-    /*
-     * Timer client hanya tampilan.
-     * Server yang menentukan kapan ronde selesai
-     * melalui event round:over.
-     */
     console.log("Timer client habis, menunggu server");
   };
 
   const handleFinishEarly = () => {
-    if (!isHost || !activeRoomCode) {
-      return;
-    }
-
-    socket.emit(
-      "round:end",
-      {
-        roomCode: activeRoomCode,
-      },
-      (response) => {
-        if (response?.error) {
-          showToast.error(response.error);
-        }
-      },
-    );
+    if (!isHost || !activeRoomCode) return;
+    socket.emit("round:end", { roomCode: activeRoomCode }, (response) => {
+      if (response?.error) showToast.error(response.error);
+    });
   };
 
   const handleNextRound = () => {
     if (!isHost) {
       showToast.error("Menunggu host memulai ronde berikutnya");
-
       return;
     }
-
     if (!activeRoomCode) {
       showToast.error("Kode room tidak ditemukan");
-
       return;
     }
-
-    socket.emit(
-      "game:start",
-      {
-        roomCode: activeRoomCode,
-      },
-      (response) => {
-        if (response?.error) {
-          showToast.error(response.error);
-          return;
-        }
-
-        /*
-         * Modal tidak ditutup di callback ini.
-         * Semua pemain akan menutup modal bersama-sama
-         * saat menerima event round:started.
-         */
-      },
-    );
+    socket.emit("game:start", { roomCode: activeRoomCode }, (response) => {
+      if (response?.error) showToast.error(response.error);
+    });
   };
 
   const handleSeeResults = () => {
     setIsModalOpen(false);
-
     navigate(`/result/${activeRoomCode}`);
   };
 
   const handleExitGame = () => {
-    const confirmed = window.confirm("Yakin ingin keluar dari room ini?");
-
-    if (confirmed) {
-      navigate("/");
-    }
+    if (window.confirm("Yakin ingin keluar dari room ini?")) navigate("/");
   };
 
   const cursorsWithPlayerInfo = Object.values(remoteCursors).filter(
@@ -415,15 +243,11 @@ export default function InGame() {
       <aside className="w-56 shrink-0 bg-white border-[3px] border-black p-4 shadow-[4px_4px_0px_0px_#000000] flex flex-col justify-between">
         <div className="flex flex-col gap-3 min-h-0">
           <div className="flex items-center justify-between mb-3 border-b-[2px] border-black pb-2">
-            <h2 className="text-xs font-black uppercase">
-              Pemain ({players.length})
-            </h2>
-
+            <h2 className="text-xs font-black uppercase">Pemain ({players.length})</h2>
             <span className="text-[10px] font-black uppercase bg-[#FFE600] px-1.5 py-0.5 border border-black">
               Ronde {roundNumber}/{maxRounds}
             </span>
           </div>
-
           <div className="overflow-y-auto">
             <PlayerList players={players} />
           </div>
@@ -436,8 +260,7 @@ export default function InGame() {
             disabled={isModalOpen}
             className="w-full bg-[#FFE600] hover:bg-[#EB4B98] disabled:opacity-50 disabled:cursor-not-allowed border-[3px] border-black py-2.5 px-3 font-black text-xs uppercase shadow-[3px_3px_0px_0px_#000000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
           >
-            <CheckSquare className="w-4 h-4" />
-            Selesai Lebih Awal
+            <CheckSquare className="w-4 h-4" /> Selesai Lebih Awal
           </button>
         )}
       </aside>
@@ -454,13 +277,8 @@ export default function InGame() {
       <main className="flex-1 flex flex-col gap-3 min-w-0">
         <div className="flex items-stretch gap-3">
           <div className="flex-1 min-w-0 bg-white border-[3px] border-black px-4 py-2 text-center font-black text-sm shadow-[3px_3px_0px_0px_#000000] flex items-center justify-center gap-2 min-h-[52px]">
-            <span className="text-xs font-bold uppercase text-gray-500 shrink-0">
-              Topik:
-            </span>
-
-            <span className="truncate leading-tight">
-              {state.currentTopic || "Menunggu topik..."}
-            </span>
+            <span className="text-xs font-bold uppercase text-gray-500 shrink-0">Topik:</span>
+            <span className="truncate leading-tight">{state.currentTopic || "Menunggu topik..."}</span>
           </div>
 
           <RoundTimer
@@ -483,18 +301,8 @@ export default function InGame() {
           </button>
         </div>
 
-        <div
-          className="relative flex-1 min-w-0"
-          onMouseMove={handleMouseMoveCanvas}
-        >
-          <Canvas
-            ref={canvasRef}
-            onStroke={handleStroke}
-            brushColor={brushColor}
-            brushSize={brushSize}
-            tool={tool}
-          />
-
+        <div className="relative flex-1 min-w-0" onMouseMove={handleMouseMoveCanvas}>
+          <Canvas ref={canvasRef} onStroke={handleStroke} brushColor={brushColor} brushSize={brushSize} tool={tool} />
           <CursorLayer cursors={cursorsWithPlayerInfo} />
         </div>
       </main>

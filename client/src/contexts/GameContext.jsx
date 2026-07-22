@@ -3,6 +3,7 @@ import {
   useContext,
   useReducer,
 } from "react";
+import { DEFAULT_MAX_ROUNDS } from "../constants/gameConfig";
 
 const GameContext = createContext(null);
 
@@ -15,7 +16,7 @@ const initialState = {
   currentTopic: "",
 
   currentRound: 0,
-  maxRounds: 3,
+  maxRounds: DEFAULT_MAX_ROUNDS || 2,
   durationSec: 90,
   endsAt: null,
 
@@ -147,7 +148,7 @@ function gameReducer(state, action) {
           0,
 
         maxRounds:
-          Number(room.maxRounds) || 3,
+          Number(room.maxRounds) || 2,
 
         durationSec:
           Number(room.durationSec) ||
@@ -174,7 +175,7 @@ function gameReducer(state, action) {
                 room.currentRound,
               ) >=
                 Number(
-                  room.maxRounds || 3,
+                  room.maxRounds || 2,
                 ),
           ),
       };
@@ -205,7 +206,7 @@ function gameReducer(state, action) {
       const maxRounds =
         Number(payload.maxRounds) ||
         state.maxRounds ||
-        3;
+        2;
 
       return {
         ...state,
@@ -271,7 +272,7 @@ function gameReducer(state, action) {
       const maxRounds =
         Number(payload.maxRounds) ||
         state.maxRounds ||
-        3;
+        2;
 
       const isLastRound = Boolean(
         payload.isLastRound ||
