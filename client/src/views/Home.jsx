@@ -22,7 +22,7 @@ export default function Home() {
     //   navigate(`/lobby/${response.roomCode}`)
     // });
 
-    navigate('/lobby'); // sementara, ganti jadi /lobby/:roomCode pas socket beneran jalan
+    navigate('/lobby/X7A9B'); // sementara, ganti jadi /lobby/:roomCode pas socket beneran jalan
   };
 
   const handleJoinRoom = () => {
@@ -35,7 +35,7 @@ export default function Home() {
     //   navigate(`/lobby/${response.roomCode}`)
     // });
 
-    navigate('/lobby'); // sementara, sama kayak di atas
+    navigate('/lobby/${roomCode}'); // sementara, sama kayak di atas
   };
 
   return (

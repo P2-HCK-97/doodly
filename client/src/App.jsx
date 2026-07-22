@@ -3,20 +3,21 @@ import Home from "./views/Home";
 import Lobby from "./views/Lobby";
 import InGame from "./views/InGame";
 import Result from "./views/Result";
+import { GameProvider } from "./contexts/GameContext";
 
 
-function App() {
+export default function App() {
 
   return (
     <>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/lobby" element={<Lobby />} />
-        <Route path="/canvas" element={<InGame />} />
-        <Route path="/result" element={<Result />} />
-      </Routes >
+      <GameProvider>
+        <Routes>
+          <Route path="/" element={<Home />} />
+        <Route path="/lobby/X7A9B" element={<Lobby />} />
+        <Route path="/game/:roomCode" element={<InGame />} />
+        <Route path="/result/:roomCode" element={<Result />} />
+        </Routes >
+      </GameProvider>
     </>
   )
 }
-
-export default App
