@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { showToast } from "../utils/toastify";
-import { showAlert } from "../utils/swalify";
 import PlayerAvatar from "../components/PlayerAvatar";
 import socket from "../services/socket";
 import { useGame } from "../contexts/GameContext";
@@ -68,53 +67,32 @@ export default function Home() {
         code: cleanRoomCode,
         username: cleanUsername,
       },
-      async (response) => {
+      (response) => {
         if (response?.error) {
           /*
-           * <dialog> native dirender di top layer browser,
-           * jadi SweetAlert selalu ketimpa berapapun z-index-nya.
-           * Modal join ditutup dulu supaya alert-nya kelihatan.
+           * Error join hanya bersifat informasi, tidak ada
+           * keputusan yang perlu diambil user. Toast cukup, dan
+           * modal join tetap terbuka supaya kode bisa langsung
+           * diperbaiki tanpa membuka ulang dialog.
            */
-          modalRef.current?.close();
-
-          const titleByCode = {
-            ROOM_NOT_FOUND: "Room Tidak Ditemukan",
-            ROOM_FINISHED: "Permainan Sudah Selesai",
-            ROOM_IN_PROGRESS: "Room Sedang Berlangsung",
-          };
+          showToast.error(response.error);
 
           /*
-           * Kode salah masih bisa diperbaiki, jadi modal dibuka lagi.
-           * Room mati / sudah selesai tidak ada gunanya dicoba ulang.
+           * Kode mati / room selesai: kosongkan input supaya
+           * user tidak submit ulang kode yang sama.
            */
-          const isRetryable =
-            response.code !== "ROOM_FINISHED" &&
-            response.code !== "ROOM_IN_PROGRESS";
-
-          await showAlert.error({
-            title: titleByCode[response.code] || "Gagal Bergabung",
-            text: response.error,
-            confirmText: isRetryable ? "Coba lagi" : "Mengerti",
-          });
-
-          if (isRetryable) {
+          if (
+            response.code === "ROOM_NOT_FOUND" ||
+            response.code === "ROOM_FINISHED"
+          ) {
             setRoomCode("");
-            modalRef.current?.showModal();
           }
 
           return;
         }
 
         if (!response?.room?.code) {
-          modalRef.current?.close();
-
-          await showAlert.error({
-            title: "Gagal Bergabung",
-            text: "Terjadi kesalahan saat mencoba masuk ke room.",
-            confirmText: "Coba lagi",
-          });
-
-          modalRef.current?.showModal();
+          showToast.error("Gagal bergabung ke room");
           return;
         }
 

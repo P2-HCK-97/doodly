@@ -1,2 +1,6 @@
 @import "tailwindcss";
 @plugin "daisyui";
+dialog > .toastify {
+  position: fixed;
+  z-index: 2147483647;
+}
