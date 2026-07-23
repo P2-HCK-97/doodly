@@ -386,6 +386,45 @@ function gameReducer(state, action) {
       };
     }
 
+    case "SET_HOST":
+      return {
+        ...state,
+
+        hostSocketId:
+          action.payload ||
+          state.hostSocketId,
+      };
+
+    case "GAME_ABORTED": {
+      const payload =
+        action.payload || {};
+
+      return {
+        ...state,
+
+        phase: "lobby",
+
+        currentTopic: "",
+        currentRound: 0,
+
+        roundHistory: [],
+        totalScore: 0,
+
+        isLastRound: false,
+        endsAt: null,
+
+        players: Array.isArray(
+          payload.players,
+        )
+          ? payload.players
+          : state.players,
+
+        hostSocketId:
+          payload.hostSocketId ||
+          state.hostSocketId,
+      };
+    }
+
     case "RESET_GAME":
       return {
         ...initialState,

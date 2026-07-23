@@ -13,6 +13,7 @@ import ToolBar from "../components/ToolBar";
 import { useGame } from "../contexts/GameContext";
 import socket from "../services/socket";
 import { showToast } from "../utils/toastify";
+import { showAlert } from "../utils/swalify";
 import useGameSocket from "../hooks/useGameSocket";
 
 import {
@@ -159,6 +160,59 @@ export default function InGame() {
       if (data.aiError) showToast.error("AI gagal menilai, hasil fallback digunakan");
     },
 
+    onGameAborted: async (data) => {
+      setIsModalOpen(false);
+      setIsAiLoading(false);
+      setSummaryData(null);
+
+      await showAlert.info({
+        title: "Permainan Dibatalkan",
+        text:
+          data.reason ||
+          "Pemain tidak cukup untuk melanjutkan permainan.",
+        confirmText: "Kembali ke lobby",
+      });
+
+      navigate(`/lobby/${activeRoomCode}`);
+    },
+
+    onHostChanged: (data) => {
+      if (data.hostSocketId === socket.id) {
+        showToast.success("Host keluar. Kamu sekarang jadi host.");
+      } else if (data.hostUsername) {
+        showToast.success(`${data.hostUsername} sekarang menjadi host`);
+      }
+    },
+
+    onPlayerLeft: (data) => {
+      showToast.error(`${data.username} keluar dari permainan`);
+    },
+
+    /*
+     * Host lama keluar saat ronde sedang dinilai.
+     * Host baru yang kirim snapshot supaya tidak stuck loading.
+     */
+    onRequestSnapshot: () => {
+      if (snapshotSubmittedRef.current || !canvasRef.current) return;
+
+      const imageBase64 = canvasRef.current.getSnapshot();
+      if (!imageBase64) return;
+
+      snapshotSubmittedRef.current = true;
+
+      socket.emit(
+        "canvas:snapshotSubmit",
+        { roomCode: activeRoomCode, imageBase64 },
+        (response) => {
+          if (response?.error) {
+            snapshotSubmittedRef.current = false;
+            setIsAiLoading(false);
+            showToast.error(response.error);
+          }
+        },
+      );
+    },
+
     onCursorBroadcast: (cursorData) => {
       if (!cursorData?.socketId) return;
       setRemoteCursors((prev) => ({ ...prev, [cursorData.socketId]: cursorData }));
@@ -223,8 +277,21 @@ export default function InGame() {
     navigate(`/result/${activeRoomCode}`);
   };
 
-  const handleExitGame = () => {
-    if (window.confirm("Yakin ingin keluar dari room ini?")) navigate("/");
+  const handleExitGame = async () => {
+    const confirmed = await showAlert.confirm({
+      title: "Keluar Game?",
+      text: "Progres ronde yang sedang berjalan tidak akan tersimpan untukmu.",
+      confirmText: "Ya, keluar",
+      cancelText: "Lanjut main",
+      danger: true,
+    });
+
+    if (!confirmed) return;
+
+    socket.emit("room:leave", { roomCode: activeRoomCode }, () => {
+      dispatch({ type: "RESET_GAME" });
+      navigate("/");
+    });
   };
 
   const cursorsWithPlayerInfo = Object.values(remoteCursors).filter(

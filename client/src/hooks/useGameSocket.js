@@ -26,6 +26,10 @@ export default function useGameSocket({
     onCursorBroadcast,
     onStrokeBroadcast,
     onCanvasClear,
+    onHostChanged,
+    onPlayerLeft,
+    onGameAborted,
+    onRequestSnapshot,
     fallbackTopic,
 } = {}) {
     const { dispatch } = useGame();
@@ -33,6 +37,37 @@ export default function useGameSocket({
     useEffect(() => {
         const handlePlayersUpdate = (data) => {
             dispatch({ type: "SET_PLAYERS", payload: data.players });
+
+            if (data.hostSocketId) {
+                dispatch({ type: "SET_HOST", payload: data.hostSocketId });
+            }
+        };
+
+        const handleHostChanged = (data) => {
+            dispatch({ type: "SET_HOST", payload: data.hostSocketId });
+
+            if (Array.isArray(data.players)) {
+                dispatch({ type: "SET_PLAYERS", payload: data.players });
+            }
+
+            onHostChanged?.(data);
+        };
+
+        const handlePlayerLeft = (data) => {
+            if (Array.isArray(data.players)) {
+                dispatch({ type: "SET_PLAYERS", payload: data.players });
+            }
+
+            onPlayerLeft?.(data);
+        };
+
+        const handleGameAborted = (data) => {
+            dispatch({ type: "GAME_ABORTED", payload: data });
+            onGameAborted?.(data);
+        };
+
+        const handleRequestSnapshot = (data) => {
+            onRequestSnapshot?.(data);
         };
 
         const handleRoundStarted = (payload) => {
@@ -67,6 +102,10 @@ export default function useGameSocket({
         socket.on("canvas:cursorBroadcast", handleCursorBroadcast);
         socket.on("canvas:strokeBroadcast", handleStrokeBroadcast);
         socket.on("canvas:clear", handleCanvasClear);
+        socket.on("room:hostChanged", handleHostChanged);
+        socket.on("room:playerLeft", handlePlayerLeft);
+        socket.on("game:aborted", handleGameAborted);
+        socket.on("round:requestSnapshot", handleRequestSnapshot);
 
         return () => {
             socket.off("room:playersUpdate", handlePlayersUpdate);
@@ -76,6 +115,10 @@ export default function useGameSocket({
             socket.off("canvas:cursorBroadcast", handleCursorBroadcast);
             socket.off("canvas:strokeBroadcast", handleStrokeBroadcast);
             socket.off("canvas:clear", handleCanvasClear);
+            socket.off("room:hostChanged", handleHostChanged);
+            socket.off("room:playerLeft", handlePlayerLeft);
+            socket.off("game:aborted", handleGameAborted);
+            socket.off("round:requestSnapshot", handleRequestSnapshot);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
@@ -86,6 +129,10 @@ export default function useGameSocket({
         onCursorBroadcast,
         onStrokeBroadcast,
         onCanvasClear,
+        onHostChanged,
+        onPlayerLeft,
+        onGameAborted,
+        onRequestSnapshot,
         fallbackTopic,
     ]);
 }

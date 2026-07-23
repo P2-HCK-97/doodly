@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { showToast } from "../utils/toastify";
+import { showAlert } from "../utils/swalify";
 import PlayerAvatar from "../components/PlayerAvatar";
 import socket from "../services/socket";
 import { useGame } from "../contexts/GameContext";
@@ -45,6 +46,7 @@ export default function Home() {
           return;
         }
 
+        setIsCreatingRoom(false);
         dispatch({ type: "ROOM_JOINED", payload: response.room });
         navigate(`/lobby/${response.room.code}`);
       },
@@ -66,14 +68,53 @@ export default function Home() {
         code: cleanRoomCode,
         username: cleanUsername,
       },
-      (response) => {
+      async (response) => {
         if (response?.error) {
-          showToast.error(response.error);
+          /*
+           * <dialog> native dirender di top layer browser,
+           * jadi SweetAlert selalu ketimpa berapapun z-index-nya.
+           * Modal join ditutup dulu supaya alert-nya kelihatan.
+           */
+          modalRef.current?.close();
+
+          const titleByCode = {
+            ROOM_NOT_FOUND: "Room Tidak Ditemukan",
+            ROOM_FINISHED: "Permainan Sudah Selesai",
+            ROOM_IN_PROGRESS: "Room Sedang Berlangsung",
+          };
+
+          /*
+           * Kode salah masih bisa diperbaiki, jadi modal dibuka lagi.
+           * Room mati / sudah selesai tidak ada gunanya dicoba ulang.
+           */
+          const isRetryable =
+            response.code !== "ROOM_FINISHED" &&
+            response.code !== "ROOM_IN_PROGRESS";
+
+          await showAlert.error({
+            title: titleByCode[response.code] || "Gagal Bergabung",
+            text: response.error,
+            confirmText: isRetryable ? "Coba lagi" : "Mengerti",
+          });
+
+          if (isRetryable) {
+            setRoomCode("");
+            modalRef.current?.showModal();
+          }
+
           return;
         }
 
         if (!response?.room?.code) {
-          showToast.error("Gagal bergabung ke room");
+          modalRef.current?.close();
+
+          await showAlert.error({
+            title: "Gagal Bergabung",
+            text: "Terjadi kesalahan saat mencoba masuk ke room.",
+            confirmText: "Coba lagi",
+          });
+
+          modalRef.current?.showModal();
           return;
         }
 

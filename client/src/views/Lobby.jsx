@@ -7,10 +7,11 @@ import { MIN_PLAYERS_TO_START } from "../constants/gameConfig";
 import { useGame } from "../contexts/GameContext";
 import socket from "../services/socket";
 import { showToast } from "../utils/toastify";
+import { showAlert } from "../utils/swalify";
 import useGameSocket from "../hooks/useGameSocket";
 
 export default function Lobby() {
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
   const navigate = useNavigate();
   const { roomCode } = useParams();
 
@@ -38,7 +39,48 @@ export default function Lobby() {
       setIsStarting(false);
       navigate(`/game/${activeRoomCode}`);
     },
+
+    onHostChanged: (data) => {
+      if (data.hostSocketId === socket.id) {
+        showToast.success("Kamu sekarang menjadi host room ini");
+      } else if (data.hostUsername) {
+        showToast.success(`${data.hostUsername} sekarang menjadi host`);
+      }
+    },
+
+    onPlayerLeft: (data) => {
+      showToast.error(`${data.username} keluar dari room`);
+    },
+
+    onGameAborted: async (data) => {
+      setIsStarting(false);
+
+      await showAlert.info({
+        title: "Permainan Dibatalkan",
+        text:
+          data.reason ||
+          "Pemain tidak cukup untuk melanjutkan permainan.",
+        confirmText: "Mengerti",
+      });
+    },
   });
+
+  const handleLeaveRoom = async () => {
+    const confirmed = await showAlert.confirm({
+      title: "Keluar Room?",
+      text: "Kamu akan kembali ke halaman awal dan keluar dari room ini.",
+      confirmText: "Ya, keluar",
+      cancelText: "Batal",
+      danger: true,
+    });
+
+    if (!confirmed) return;
+
+    socket.emit("room:leave", { roomCode: activeRoomCode }, () => {
+      dispatch({ type: "RESET_GAME" });
+      navigate("/");
+    });
+  };
 
   const handleCopyCode = async () => {
     try {
@@ -167,6 +209,14 @@ export default function Lobby() {
               Menunggu host memulai permainan
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={handleLeaveRoom}
+            className="w-full mt-3 bg-white hover:bg-red-300 border-[3px] border-black py-2.5 font-black text-xs uppercase shadow-[3px_3px_0px_0px_#000000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
+          >
+            Keluar Room
+          </button>
 
           <p className="text-[10px] font-bold text-gray-500 text-center uppercase mt-5">
             Permainan terdiri dari {state.maxRounds || 2} ronde

@@ -62,6 +62,12 @@ function createRoom({ hostSocketId, hostUsername, color, avatarUrl }) {
 
     roundHistory: [],
     totalScore: 0,
+
+    /*
+     * Pemain yang sempat keluar di tengah game.
+     * Dipakai untuk membedakan rejoin vs pemain baru.
+     */
+    disconnectedPlayers: [],
   };
 
   rooms.set(code, room);
@@ -95,6 +101,17 @@ function addPlayer(code, player) {
     room.players.push(playerData);
   }
 
+  /*
+   * Pemain sudah kembali, hapus dari daftar disconnect.
+   */
+  if (Array.isArray(room.disconnectedPlayers)) {
+    room.disconnectedPlayers = room.disconnectedPlayers.filter(
+      (item) =>
+        item.username.toLowerCase() !==
+        String(player.username).toLowerCase(),
+    );
+  }
+
   return room;
 }
 
@@ -105,7 +122,40 @@ function removePlayer(code, socketId) {
     return null;
   }
 
+  if (!Array.isArray(room.disconnectedPlayers)) {
+    room.disconnectedPlayers = [];
+  }
+
+  const leavingPlayer = room.players.find(
+    (player) => player.socketId === socketId,
+  );
+
   room.players = room.players.filter((player) => player.socketId !== socketId);
+
+  /*
+   * Catat pemain yang keluar di tengah game supaya
+   * dia boleh masuk lagi (rejoin), sementara orang baru ditolak.
+   */
+  const isMidGame =
+    room.phase === "playing" ||
+    room.phase === "evaluating" ||
+    room.phase === "round-result";
+
+  if (leavingPlayer && isMidGame) {
+    const alreadyRecorded = room.disconnectedPlayers.some(
+      (player) =>
+        player.username.toLowerCase() ===
+        leavingPlayer.username.toLowerCase(),
+    );
+
+    if (!alreadyRecorded) {
+      room.disconnectedPlayers.push({
+        username: leavingPlayer.username,
+        color: leavingPlayer.color,
+        leftAt: Date.now(),
+      });
+    }
+  }
 
   /*
    * Jika host keluar dan masih ada pemain,
@@ -113,12 +163,53 @@ function removePlayer(code, socketId) {
    */
   if (socketId === room.hostSocketId && room.players.length > 0) {
     room.hostSocketId = room.players[0].socketId;
-
-    room.players = room.players.map((player) => ({
-      ...player,
-      isHost: player.socketId === room.hostSocketId,
-    }));
   }
+
+  /*
+   * Selalu sinkronkan flag isHost supaya client
+   * tidak pernah melihat dua host atau nol host.
+   */
+  room.players = room.players.map((player) => ({
+    ...player,
+    isHost: player.socketId === room.hostSocketId,
+  }));
+
+  return room;
+}
+
+/**
+ * Membatalkan game yang sedang berjalan dan
+ * mengembalikan room ke kondisi lobby.
+ *
+ * Skor dan riwayat ronde direset karena permainan
+ * dianggap tidak sah untuk diselesaikan.
+ *
+ * @param {string} code
+ * @returns {object|null}
+ */
+function abortGame(code) {
+  const room = rooms.get(code);
+
+  if (!room) {
+    return null;
+  }
+
+  room.phase = "lobby";
+
+  room.currentRound = 0;
+  room.currentTopic = null;
+  room.usedTopics = [];
+
+  room.strokes = [];
+  room.canvasSnapshot = null;
+
+  room.roundStartAt = null;
+  room.durationSec = 0;
+
+  room.roundHistory = [];
+  room.totalScore = 0;
+
+  room.disconnectedPlayers = [];
 
   return room;
 }
@@ -278,6 +369,7 @@ module.exports = {
   getRoom,
   addPlayer,
   removePlayer,
+  abortGame,
   setTopicPool,
   startNextRound,
   addStroke,

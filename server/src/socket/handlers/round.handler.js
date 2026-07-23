@@ -539,6 +539,14 @@ function endRoundForRoom(io, roomCode) {
   }
 
   /*
+   * Pemain sudah tidak cukup: jangan lanjut ke evaluasi.
+   * room.handler yang akan mengirim game:aborted.
+   */
+  if (room.players.length < 2) {
+    return;
+  }
+
+  /*
    * Server menunggu host mengirim snapshot.
    */
   room.phase = "evaluating";
@@ -550,6 +558,24 @@ function endRoundForRoom(io, roomCode) {
   });
 }
 
+/**
+ * Membatalkan timer ronde untuk sebuah room.
+ * Dipakai saat room dihapus atau game dibatalkan,
+ * supaya tidak ada callback yang jalan ke room mati.
+ *
+ * @param {string} roomCode
+ */
+function cancelRoundTimer(roomCode) {
+  const timeoutId = roundTimers.get(roomCode);
+
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    roundTimers.delete(roomCode);
+  }
+}
+
 module.exports = {
   registerRoundHandlers,
+  cancelRoundTimer,
+  endRoundForRoom,
 };
